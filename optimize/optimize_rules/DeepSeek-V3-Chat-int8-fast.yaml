@@ -1,0 +1,99 @@
+- match:
+    class: ktransformers.models.modeling_deepseek_v3.DeepseekV3RotaryEmbedding
+  replace:
+    class: ktransformers.operators.RoPE.YarnRotaryEmbeddingV3
+    kwargs:
+      generate_device: "cpu"
+      prefill_device: "cpu"
+
+- match:
+    name: "^lm_head$"
+    class: torch.nn.Linear
+  replace:
+    class: ktransformers.operators.linear.KTransformersLinear
+    kwargs:
+      generate_device: "cpu"
+      prefill_device: "cpu"
+      generate_op: "KLinearTorch"
+      prefill_op: "KLinearTorch"
+      dtype: "int8"
+      optimize_int8: true
+
+- match:
+    name: "^model\\.layers\\.(?!.*self_attn\\.kv_b_proj).*$"
+    class: torch.nn.Linear
+  replace:
+    class: ktransformers.operators.linear.KTransformersLinear
+    kwargs:
+      generate_device: "cpu"
+      prefill_device: "cpu"
+      generate_op: "KLinearTorch"
+      prefill_op: "KLinearTorch"
+      dtype: "int8"
+      optimize_int8: true
+
+- match:
+    name: "^model\\.layers\\..*\\.mlp$"
+    class: ktransformers.models.modeling_deepseek_v3.DeepseekV3MoE
+  replace:
+    class: ktransformers.operators.experts.KDeepseekV3MoE
+    kwargs:
+      generate_device: "cpu"
+      prefill_device: "cpu"
+      optimize_int8: true
+
+- match:
+    class: ktransformers.models.modeling_deepseek_v3.MoEGate
+  replace:
+    class: ktransformers.operators.gate.KMoEGate
+    kwargs:
+      generate_device: "cpu"
+      prefill_device: "cpu"
+      optimize_int8: true
+
+- match:
+    name: "^model\\.layers\\..*\\.mlp\\.experts$"
+  replace:
+    class: ktransformers.operators.experts.KTransformersExperts
+    kwargs:
+      prefill_device: "cpu"
+      prefill_op: "KExpertsCPU"
+      generate_device: "cpu"
+      generate_op: "KExpertsCPU"
+      out_device: "cpu"
+      backend: "AMXDynamicInt8"
+      num_threads: 32
+      batch_size: 8
+      optimize_cache: true
+  recursive: False
+
+# Commented out - DeepseekV3 attention should not be replaced with V2
+# - match:
+#     name: "^model\\.layers\\..*\\.self_attn$"
+#   replace:
+#     class: ktransformers.operators.attention.KDeepseekV2Attention
+#     kwargs:
+#       generate_device: "cpu"
+#       prefill_device: "cpu"
+#       absorb_for_prefill: False
+#       use_flash_attn: false
+#       optimize_int8: true
+#       num_threads: 32
+
+- match:
+    name: "^model$"
+  replace:
+    class: "ktransformers.operators.models.KDeepseekV2Model"
+    kwargs:
+      per_layer_prefill_intput_threshold: 512
+      enable_layer_fusion: true
+      optimize_cache_access: true
+
+- match:
+    name: "^model.embed_tokens"
+  replace:
+    class: "default"
+    kwargs:
+      generate_device: "cpu"
+      prefill_device: "cpu"
+      optimize_int8: true
